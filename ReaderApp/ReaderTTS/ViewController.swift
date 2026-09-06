@@ -1,58 +1,34 @@
 
-import UIKit
-import WebKit
+import UIKit; import WebKit
 class ViewController: UIViewController, WKScriptMessageHandler {
     var webView: WKWebView!
-    override func viewDidLoad() {
+    override func viewDidLoad(){
         super.viewDidLoad()
-        view.backgroundColor = UIColor(red: 0.96, green: 0.94, blue: 0.90, alpha: 1.0)
-        let config = WKWebViewConfiguration()
-        config.allowsInlineMediaPlayback = true
-        let userController = WKUserContentController()
-        userController.add(self, name: "tts")
-        userController.add(self, name: "ttsVoices")
-        config.userContentController = userController
-        webView = WKWebView(frame: .zero, configuration: config)
-        webView.translatesAutoresizingMaskIntoConstraints = false
+        view.backgroundColor=UIColor(red:0.96,green:0.94,blue:0.90,alpha:1)
+        let c=WKWebViewConfiguration(); c.allowsInlineMediaPlayback=true
+        let uc=WKUserContentController(); uc.add(self,name:"tts"); uc.add(self,name:"ttsVoices"); c.userContentController=uc
+        webView=WKWebView(frame:.zero,configuration:c)
+        webView.translatesAutoresizingMaskIntoConstraints=false
         webView.scrollView.contentInsetAdjustmentBehavior = .never
         view.addSubview(webView)
         NSLayoutConstraint.activate([
-            webView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-            webView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            webView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+            webView.topAnchor.constraint(equalTo:view.safeAreaLayoutGuide.topAnchor),
+            webView.leadingAnchor.constraint(equalTo:view.leadingAnchor),
+            webView.trailingAnchor.constraint(equalTo:view.trailingAnchor),
+            webView.bottomAnchor.constraint(equalTo:view.bottomAnchor)
         ])
-        TTSManager.shared.onState = { [weak self] state in
-            DispatchQueue.main.async {
-                self?.webView.evaluateJavaScript("window.onNativeTTSState&&window.onNativeTTSState('\(state)')", completionHandler: nil)
-            }
-        }
-        if let path = Bundle.main.path(forResource: "index", ofType: "html", inDirectory: "www") {
-            let url = URL(fileURLWithPath: path)
-            webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
-        }
+        TTSManager.shared.onState={[weak self] s in DispatchQueue.main.async{ self?.webView.evaluateJavaScript("window.onNativeTTSState&&window.onNativeTTSState('\(s)')", completionHandler:nil) }}
+        if let p=Bundle.main.path(forResource:"index",ofType:"html",inDirectory:"www"){ let u=URL(fileURLWithPath:p); webView.loadFileURL(u,allowingReadAccessTo:u.deletingLastPathComponent()) }
     }
-    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        if message.name == "tts" {
-            guard let body = message.body as? [String: Any] else { return }
-            let action = body["action"] as? String ?? ""
-            switch action {
-            case "speak":
-                let text = body["text"] as? String ?? ""
-                let rate = (body["rate"] as? NSNumber)?.floatValue ?? 0.5
-                let lang = body["lang"] as? String ?? "ko-KR"
-                // Always 0.5 as user requested
-                TTSManager.shared.speak(text: text, rate: 0.5, lang: lang)
-            case "pause": TTSManager.shared.pause()
-            case "resume": TTSManager.shared.resume()
-            case "stop": TTSManager.shared.stop()
-            default: break
-            }
-        } else if message.name == "ttsVoices" {
-            let voices = TTSManager.shared.getVoices()
-            if let data = try? JSONSerialization.data(withJSONObject: voices), let json = String(data: data, encoding: .utf8) {
-                webView.evaluateJavaScript("window.onVoicesLoaded&&window.onVoicesLoaded(\(json))", completionHandler: nil)
-            }
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage){
+        guard let b=message.body as? [String:Any] else {return}
+        let a=b["action"] as? String ?? ""
+        switch a{
+        case "speak": let t=b["text"] as? String ?? ""; TTSManager.shared.speak(text:t, rate:0.5, lang:"ko-KR")
+        case "pause": TTSManager.shared.pause()
+        case "resume": TTSManager.shared.resume()
+        case "stop": TTSManager.shared.stop()
+        default: break
         }
     }
 }

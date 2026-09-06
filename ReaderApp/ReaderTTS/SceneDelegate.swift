@@ -1,11 +1,1 @@
-import UIKit
-class SceneDelegate: UIResponder, UIWindowSceneDelegate {
-    var window: UIWindow?
-    func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
-        guard let w = scene as? UIWindowScene else { return }
-        let win = UIWindow(windowScene: w)
-        win.rootViewController = ViewController()
-        self.window = win
-        win.makeKeyAndVisible()
-    }
-}
+import UIKit; class SceneDelegate: UIResponder, UIWindowSceneDelegate { var window: UIWindow?; func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions){ guard let w=scene as? UIWindowScene else {return}; let win=UIWindow(windowScene:w); win.rootViewController=ViewController(); self.window=win; win.makeKeyAndVisible() } }

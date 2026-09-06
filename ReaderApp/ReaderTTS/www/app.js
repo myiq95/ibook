@@ -1,20 +1,19 @@
 
-// Native TTS Bridge V11 - Fixed rate 0.5 and no instant finish
+// V13 Bridge - Stable TTS Engine, starts from current open page
 (function(){
   const isNative = !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.tts);
-  console.log("[Bridge V11] isNative", isNative);
+  console.log("[V13] native?", isNative);
   if(!isNative) return;
 
-  let speakingLock = false;
-
   window.NativeTTS = {
-    speak(t){
-      if(!t || !t.trim()) { console.log("[Bridge] empty text skip"); return; }
-      // Force rate 0.5 as requested
-      try {
-        window.webkit.messageHandlers.tts.postMessage({action:'speak', text:t, rate:0.5, lang:'ko-KR'});
-        console.log("[Bridge] -> native speak", t.slice(0,40));
-      } catch(e){ console.error(e); }
+    speak(t, rate){
+      let txt = (t||"").trim();
+      if(!txt) return;
+      try{
+        // Fixed rate 0.5 as user requested, lang ko-KR
+        window.webkit.messageHandlers.tts.postMessage({action:'speak', text:txt, rate:0.5, lang:'ko-KR'});
+        console.log("[V13] -> native", txt.slice(0,40));
+      }catch(e){ console.error(e); }
     },
     pause(){ try{ window.webkit.messageHandlers.tts.postMessage({action:'pause'}) }catch(e){} },
     resume(){ try{ window.webkit.messageHandlers.tts.postMessage({action:'resume'}) }catch(e){} },
@@ -22,25 +21,17 @@
   };
 
   const nativeSynth = {
-    _speaking:false, _paused:false, _currentUtter:null, _lastText:"",
+    _speaking:false, _paused:false, _currentUtter:null,
     get speaking(){return this._speaking;}, get pending(){return false;}, get paused(){return this._paused;},
     speak(u){
       const txt = (u.text||"").trim();
-      if(!txt){ console.log("[Bridge] skip empty utterance"); try{ u.onend&&u.onend(); }catch(e){} return; }
-      if(speakingLock){ console.log("[Bridge] locked, ignore"); return; }
-      speakingLock = true;
-      this._speaking=true; this._paused=false; this._currentUtter=u; this._lastText=txt;
-      // Force AV rate to 0.5 regardless of u.rate
-      u.rate = 0.5;
-      window.NativeTTS.speak(txt);
-      setTimeout(()=>{ try{ u.onstart&&u.onstart(); }catch(e){} speakingLock=false; }, 150);
+      if(!txt){ try{ u.onend&&u.onend(); }catch(e){} return; }
+      this._speaking=true; this._paused=false; this._currentUtter=u;
+      // Use original text (with . ? !) so AVSpeech pauses naturally, it does NOT say "물음표"
+      window.NativeTTS.speak(txt, u.rate);
+      setTimeout(()=>{ try{ u.onstart&&u.onstart(); }catch(e){} }, 20);
     },
-    cancel(){
-      speakingLock=false;
-      this._speaking=false; this._paused=false;
-      try{ window.NativeTTS.stop(); }catch(e){}
-      // Do NOT call onend here - let native tell us finished, otherwise we get double skip
-    },
+    cancel(){ this._speaking=false; this._paused=false; try{ window.NativeTTS.stop(); }catch(e){} },
     pause(){ this._paused=true; window.NativeTTS.pause(); },
     resume(){ this._paused=false; window.NativeTTS.resume(); },
     getVoices(){return [];}
@@ -49,17 +40,14 @@
   try{ Object.defineProperty(window,'speechSynthesis',{value:nativeSynth, configurable:true}); }catch(e){ window.speechSynthesis=nativeSynth; }
 
   window.onNativeTTSState=function(state){
-    console.log("[Bridge] native state", state, "text", nativeSynth._lastText?.slice(0,20));
     const s=window.speechSynthesis; const u=s._currentUtter;
+    console.log("[V13] state", state);
     if(state==='playing'){ s._speaking=true; s._paused=false; }
     else if(state==='paused'){ s._paused=true; }
     else if(state==='finished'){
-      s._speaking=false; s._paused=false; speakingLock=false;
-      if(u){ try{ console.log("[Bridge] calling onend for", u.text.slice(0,20)); u.onend&&u.onend(); }catch(e){ console.error(e); } }
-    } else if(state==='stopped'){
-      s._speaking=false; s._paused=false; speakingLock=false;
-      // stopped should NOT auto call onend, otherwise jumps to next
-    }
+      s._speaking=false; s._paused=false;
+      if(u){ try{ u.onend&&u.onend(); }catch(e){} }
+    } else if(state==='stopped'){ s._speaking=false; s._paused=false; }
   };
 })();
 
@@ -1180,3 +1168,84 @@ function boot(){
   renderShelf();
 }
 document.addEventListener('DOMContentLoaded', boot);
+
+function getFirstVisiblePage(){
+  try {
+    const scrollLeft = el.flow ? el.flow.scrollLeft : 0;
+    const pageWidth = el.pages ? el.pages.clientWidth : window.innerWidth;
+    return Math.floor(scrollLeft / (pageWidth||1));
+  } catch(e){ return 0; }
+}
+
+
+// V13 Wrapper - ensure TTS works after file upload and starts from current open page
+(function(){
+  const originalStartTts = window.startTts || null;
+  // Override with fixed version
+  window.startTts = function(){
+    try {
+      const bar = document.getElementById('ttsBar');
+      if(bar){ bar.hidden=false; requestAnimationFrame(()=>bar.classList.add('show')); }
+      // Build queue
+      let q = [];
+      try { q = buildTtsQueue(); } catch(e){ q=[]; }
+      if(!q || q.length===0){
+        console.log("[V13 Wrapper] queue empty, retry 300ms");
+        setTimeout(()=>{
+          try {
+            const q2 = buildTtsQueue();
+            if(!q2 || q2.length===0){ alert('읽을 텍스트가 없습니다'); return; }
+            State.tts.queue = q2;
+            doStart(q2);
+          } catch(e){ console.error(e); }
+        }, 300);
+        return;
+      }
+      State.tts.queue = q;
+      doStart(q);
+    } catch(e){ console.error("startTts wrapper error", e); }
+  };
+
+  function doStart(queue){
+    try {
+      if(State.tts.synth) State.tts.synth.cancel();
+      // 현재 열려있는 페이지부터 읽기 - 사용자 요청대로
+      let firstPage = 0;
+      try {
+        if(typeof getFirstVisiblePage==='function') firstPage = getFirstVisiblePage();
+        else if(typeof getCurrentPage==='function') firstPage = getCurrentPage();
+        else {
+          const flow = document.getElementById('bookFlow');
+          const pages = document.getElementById('pages');
+          if(flow && pages && pages.clientWidth>0) firstPage = Math.floor(flow.scrollLeft / pages.clientWidth);
+        }
+      } catch(e){ firstPage=0; }
+      let idx = 0;
+      try { idx = queue.findIndex(s => { try{ return pageOfNode(s.node) >= firstPage; }catch(e){ return true; } }); } catch(e){ idx=0; }
+      if(idx<0) idx=0;
+      console.log("[V13 Wrapper] start from page", firstPage, "idx", idx, "total", queue.length);
+      State.tts.idx = idx;
+      State.tts.speaking = true; State.tts.paused=false;
+      if(typeof setTtsPlayIcon==='function') setTtsPlayIcon('pause');
+      speakNext();
+    } catch(e){ console.error(e); }
+  }
+
+  // Ensure cleanForSpeech keeps . ? ! for natural pause - iOS does NOT say "물음표"
+  if(typeof cleanForSpeech==='function'){
+    const origClean = cleanForSpeech;
+    window.cleanForSpeech = function(text){
+      // Keep . ? ! , for prosody, remove only decorative symbols that cause "샵" "별표" etc.
+      return text
+        .replace(/[#*※◇◆■□★☆○●▶▷▸→←↑↓·•◦・♪♫♬†‡§¶°]/g, ' ')
+        .replace(/[~〜∼]/g, ' ')
+        .replace(/`+/g, ' ')
+        .replace(/[「」『』《》【】〈〉]/g, ' ')
+        .replace(/…/g, ', ')
+        .replace(/[—–]/g, ', ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    };
+  }
+})();
+
