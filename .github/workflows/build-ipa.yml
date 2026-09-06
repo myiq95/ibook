@@ -12,8 +12,7 @@ jobs:
         run: |
           rm -rf ./build ./ReaderApp/build
           xcodebuild -project ReaderApp/ReaderApp.xcodeproj -scheme ReaderTTS -configuration Release -sdk iphoneos CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGNING_IDENTITY="" AD_HOC_CODE_SIGNING_ALLOWED=YES SYMROOT=./build/symroot OBJROOT=./build/objroot build
-          find . -name "ReaderTTS.app" -type d
-      - name: Package IPA
+      - name: Package
         run: |
           APP=$(find . -name "ReaderTTS.app" -type d | head -n 1)
           rm -rf Payload; mkdir Payload; cp -R "$APP" Payload/; zip -r ReaderTTS-SideStore.ipa Payload
