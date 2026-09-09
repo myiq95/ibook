@@ -1116,15 +1116,15 @@ function boot(){
 }
 document.addEventListener('DOMContentLoaded', boot);
 
-
-// V22 Bridge - 지안 프리미엄 보이스 사용하도록 수정
+// V23 Bridge - 지안 프리미엄 + 문장부호 제거
 (function(){
   const isNative = !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.tts);
   if(!isNative) return;
   window.NativeTTS = {
     speak(t){
       let txt=(t||"").trim(); if(!txt) return;
-      // 문장부호는 네이티브에서 처리하므로 여기선 제거 안함 - 그대로 전달
+      txt = txt.replace(/\./g,' ').replace(/\?/g,' ').replace(/=/g,' ').replace(/'/g,' ').replace(/"/g,' ').replace(/\s+/g,' ').trim();
+      if(!txt) return;
       try{ window.webkit.messageHandlers.tts.postMessage({action:'speak', text:txt, rate:0.5, lang:'ko-KR'}); }catch(e){}
     },
     pause(){ try{ window.webkit.messageHandlers.tts.postMessage({action:'pause'}) }catch(e){} },
@@ -1134,124 +1134,23 @@ document.addEventListener('DOMContentLoaded', boot);
   const nativeSynth = {
     _speaking:false, _paused:false, _currentUtter:null,
     get speaking(){return this._speaking;}, get pending(){return false;}, get paused(){return this._paused;},
-    speak(u){
-      const txt=(u.text||"").trim(); if(!txt){ try{ u.onend&&u.onend(); }catch(e){} return; }
-      this._speaking=true; this._paused=false; this._currentUtter=u;
-      window.NativeTTS.speak(txt);
-      setTimeout(()=>{ try{ u.onstart&&u.onstart(); }catch(e){} }, 20);
-    },
+    speak(u){ const txt=(u.text||"").trim(); if(!txt){ try{ u.onend&&u.onend(); }catch(e){} return; } this._speaking=true; this._paused=false; this._currentUtter=u; window.NativeTTS.speak(txt); setTimeout(()=>{ try{ u.onstart&&u.onstart(); }catch(e){} }, 20); },
     cancel(){ this._speaking=false; this._paused=false; try{ window.NativeTTS.stop(); }catch(e){} },
     pause(){ this._paused=true; window.NativeTTS.pause(); },
     resume(){ this._paused=false; window.NativeTTS.resume(); },
     getVoices(){return [];}
   };
   try{ Object.defineProperty(window,'speechSynthesis',{value:nativeSynth, configurable:true}); }catch(e){ window.speechSynthesis=nativeSynth; }
-  window.onNativeTTSState=function(state){
-    const s=window.speechSynthesis; const u=s._currentUtter;
-    if(state==='playing'){ s._speaking=true; }
-    else if(state==='paused'){ s._paused=true; }
-    else if(state==='finished'){ s._speaking=false; s._paused=false; if(u){ try{ u.onend&&u.onend(); }catch(e){} } }
-    else if(state==='stopped'){ s._speaking=false; }
-  };
+  window.onNativeTTSState=function(state){ const s=window.speechSynthesis; const u=s._currentUtter; if(state==='playing'){ s._speaking=true; } else if(state==='paused'){ s._paused=true; } else if(state==='finished'){ s._speaking=false; s._paused=false; if(u){ try{ u.onend&&u.onend(); }catch(e){} } } else if(state==='stopped'){ s._speaking=false; } };
 })();
 
-
-// V21 Highlight
+// V23 Highlight minimal
 (function(){
-  if(window.__v21Highlight) return; window.__v21Highlight=true;
-  const origBuild = window.buildTtsQueue;
-  if(origBuild){
-    window.buildTtsQueue = function(){
-      const q = origBuild.apply(this, arguments);
-      try{
-        q.forEach(item=>{
-          try{
-            const node=item.node;
-            if(!node||node.nodeType!==3) return;
-            const p=node.parentElement;
-            if(!p||(p.classList&&p.classList.contains('tts-sentence'))) return;
-            const span=document.createElement('span');
-            span.className='tts-sentence';
-            p.insertBefore(span, node);
-            span.appendChild(node);
-            item.node=span.firstChild;
-            item.span=span;
-          }catch(e){}
-        });
-      }catch(e){}
-      return q;
-    };
-  }
-  let last=null;
-  function clear(){
-    if(last){ try{last.classList.remove('active');}catch(e){} last=null; }
-    if(window.lastTtsNode){ try{window.lastTtsNode.classList.remove('tts-active');}catch(e){} window.lastTtsNode=null; }
-  }
-  function vis(el){
-    const f=document.getElementById('bookFlow'); if(!f||!el) return true;
-    const fr=f.getBoundingClientRect(); const er=el.getBoundingClientRect();
-    return er.left>=fr.left-30 && er.right<=fr.right+30;
-  }
-  function turn(n){
-    try{ if(!vis(n)){ const t=pageOfNode(n); const c=State.current?State.current.spread:0; if(t>c&&typeof next==='function') next(); } }catch(e){}
-  }
-  window.highlightTtsSentence=function(){
-    clear();
-    const it=State.tts.queue?State.tts.queue[State.tts.idx]:null; if(!it) return;
-    let sp=it.span;
-    if(!sp){
-      let nd=it.node;
-      if(nd&&nd.parentElement&&nd.parentElement.classList.contains('tts-sentence')) sp=nd.parentElement;
-      else if(nd&&nd.parentElement) sp=nd.parentElement;
-    }
-    if(!sp) return;
-    turn(sp);
-    sp.classList.add('active');
-    last=sp; window.lastTtsNode=sp;
-  };
-  const os=window.stopTTS; window.stopTTS=function(){ clear(); if(os) return os.apply(this, arguments); };
+  if(window.__v23H)return;window.__v23H=true;
+  const o=window.buildTtsQueue;
+  if(o){window.buildTtsQueue=function(){const q=o.apply(this,arguments);try{q.forEach(i=>{try{const n=i.node;if(!n||n.nodeType!==3)return;const p=n.parentElement;if(!p||p.classList.contains('tts-sentence'))return;const s=document.createElement('span');s.className='tts-sentence';p.insertBefore(s,n);s.appendChild(n);i.node=s.firstChild;i.span=s;}catch(e){}});}catch(e){}return q;};}let l=null;function cl(){if(l){try{l.classList.remove('active');}catch(e){}l=null;}if(window.lastTtsNode){try{window.lastTtsNode.classList.remove('tts-active');}catch(e){}window.lastTtsNode=null;}}function vis(e){const f=document.getElementById('bookFlow');if(!f||!e)return true;const fr=f.getBoundingClientRect();const er=e.getBoundingClientRect();return er.left>=fr.left-30&&er.right<=fr.right+30;}window.highlightTtsSentence=function(){cl();const it=State.tts.queue?State.tts.queue[State.tts.idx]:null;if(!it)return;let sp=it.span||(it.node&&it.node.parentElement);if(!sp)return;try{if(!vis(sp)){const t=pageOfNode(sp);const c=State.current?State.current.spread:0;if(t>c&&typeof next==='function')next();}}catch(e){}sp.classList.add('active');l=sp;window.lastTtsNode=sp;};const os=window.stopTTS;window.stopTTS=function(){cl();if(os)return os.apply(this,arguments);};
 })();
 
-
-// V22 Wrapper
-(function(){
-  if(window.__v22Wrapper) return; window.__v22Wrapper=true;
-  window.startTts = function(){
-    try{
-      let q=[]; try{ q=buildTtsQueue(); }catch(e){ q=[]; }
-      if(!q||q.length===0){
-        setTimeout(()=>{
-          const q2=buildTtsQueue();
-          if(!q2||q2.length===0){ if(typeof toast==='function') toast('읽을 텍스트가 없습니다'); return; }
-          State.tts.queue=q2; doStart(q2);
-        }, 300); return;
-      }
-      State.tts.queue=q; doStart(q);
-    }catch(e){ console.error(e); }
-  };
-  function doStart(queue){
-    try{
-      if(State.tts.synth) State.tts.synth.cancel();
-      const info = State.perChapter ? State.perChapter.get(chapterKey()) : null;
-      let startIdx=0;
-      if(info){
-        const perView=info.single?1:2;
-        const firstPage=State.current.spread * perView;
-        const idx=queue.findIndex(s=>{ try{ return pageOfNode(s.node)>=firstPage; }catch(e){ return true; } });
-        if(idx>=0) startIdx=idx;
-      }
-      State.tts.idx=startIdx;
-      State.tts.speaking=true; State.tts.paused=false;
-      if(typeof setTtsPlayIcon==='function') setTtsPlayIcon('pause');
-      const bar=document.getElementById('ttsBar');
-      if(bar){ bar.hidden=false; requestAnimationFrame(()=>bar.classList.add('show')); }
-      speakNext();
-    }catch(e){ console.error(e); }
-  }
-})();
-
-
-function cleanForSpeech(text){
-  // 문장부호 제거하지 않고 그대로 전달 - 네이티브가 자연스럽게 처리
-  return text.replace(/\s+/g,' ').trim();
-}
+// V23 wrapper + clean
+(function(){if(window.__v23W)return;window.__v23W=true;window.startTts=function(){try{let q=[];try{q=buildTtsQueue();}catch(e){}if(!q||q.length===0){setTimeout(()=>{const q2=buildTtsQueue();if(!q2||q2.length===0){toast('읽을 텍스트가 없습니다');return;}State.tts.queue=q2;doS(q2);},300);return;}State.tts.queue=q;doS(q);}catch(e){}};function doS(queue){if(State.tts.synth)State.tts.synth.cancel();const info=State.perChapter?State.perChapter.get(chapterKey()):null;let sIdx=0;if(info){const pv=info.single?1:2;const fp=State.current.spread*pv;const idx=queue.findIndex(x=>{try{return pageOfNode(x.node)>=fp;}catch(e){return true;}});if(idx>=0)sIdx=idx;}State.tts.idx=sIdx;State.tts.speaking=true;State.tts.paused=false;setTtsPlayIcon('pause');const bar=document.getElementById('ttsBar');if(bar){bar.hidden=false;requestAnimationFrame(()=>bar.classList.add('show'));}speakNext();}})();
+function cleanForSpeech(t){return t.replace(/[#*※◇◆■□★☆○●▶▷▸→←↑↓·•◦・♪♫♬†‡§¶°]/g,' ').replace(/[~〜∼]/g,' ').replace(/`+/g,' ').replace(/[「」『』《》〈〉]/g,' ').replace(/…/g,' ').replace(/[—–]/g,' ').replace(/\./g,' ').replace(/\?/g,' ').replace(/=/g,' ').replace(/'/g,' ').replace(/"/g,' ').replace(/\s+/g,' ').trim();}
