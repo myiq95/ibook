@@ -1239,3 +1239,90 @@ document.addEventListener('DOMContentLoaded', boot);
   }
 })();
 
+// V18 Highlight - 단어/음절 단위, 페이지 넘김 자동, 싱크
+(function(){
+  if(window.__v18Highlight) return; window.__v18Highlight=true;
+  let lastWordSpans = [];
+  let wordTimer = null;
+
+  function clearHighlight(){
+    if(window.lastTtsNode){ try{ window.lastTtsNode.classList.remove('tts-active'); }catch(e){} window.lastTtsNode=null; }
+    lastWordSpans.forEach(s=>{ try{ s.classList.remove('active'); }catch(e){} });
+    lastWordSpans=[];
+    if(wordTimer){ clearInterval(wordTimer); wordTimer=null; }
+  }
+  function isElementVisible(el){
+    if(!el) return false;
+    const flow = document.getElementById('bookFlow');
+    if(!flow) return true;
+    const flowRect = flow.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    return elRect.left >= flowRect.left - 10 && elRect.right <= flowRect.right + 10;
+  }
+  function autoTurnPageIfNeeded(node){
+    try{
+      if(!isElementVisible(node)){
+        const targetPage = pageOfNode(node);
+        const currentPage = State.current? State.current.spread : 0;
+        if(targetPage > currentPage && typeof next==='function'){
+          next();
+          setTimeout(()=>{ if(node && node.scrollIntoView) node.scrollIntoView({behavior:'smooth', block:'start'}); }, 250);
+        }
+      }
+    }catch(e){}
+  }
+
+  window.highlightTtsSentence = function(){
+    clearHighlight();
+    const item = State.tts.queue? State.tts.queue[State.tts.idx] : null;
+    if(!item) return;
+    const node = item.node;
+    if(!node) return;
+    autoTurnPageIfNeeded(node.parentElement || node);
+    try{
+      const parent = node.parentElement;
+      if(parent){ parent.classList.add('tts-active'); window.lastTtsNode = parent; }
+    }catch(e){}
+    try{
+      const parent = node.parentElement;
+      if(!parent) return;
+      if(!parent.querySelector('.tts-word')){
+        const text = node.nodeValue;
+        if(!text) return;
+        const words = text.split(/(\s+)/);
+        const frag = document.createDocumentFragment();
+        const spans = [];
+        words.forEach(w=>{
+          if(/^\s+$/.test(w)){ frag.appendChild(document.createTextNode(w)); }
+          else if(w){
+            const span=document.createElement('span');
+            span.textContent=w;
+            span.className='tts-word';
+            frag.appendChild(span);
+            spans.push(span);
+          }
+        });
+        node.parentNode.replaceChild(frag, node);
+        item.node = spans[0]? spans[0].firstChild || spans[0] : node;
+        lastWordSpans = spans;
+      } else {
+        lastWordSpans = Array.from(parent.querySelectorAll('.tts-word'));
+      }
+      if(lastWordSpans.length>0){
+        const totalDuration = Math.max(1000, item.text.length * 75);
+        const perWord = totalDuration / lastWordSpans.length;
+        let idx=0;
+        lastWordSpans[0].classList.add('active');
+        wordTimer = setInterval(()=>{
+          if(idx>=lastWordSpans.length){ clearInterval(wordTimer); wordTimer=null; return; }
+          lastWordSpans.forEach(s=>s.classList.remove('active'));
+          if(lastWordSpans[idx]) lastWordSpans[idx].classList.add('active');
+          idx++;
+        }, perWord);
+      }
+    }catch(e){}
+  };
+
+  const origStop = window.stopTTS;
+  window.stopTTS = function(){ clearHighlight(); if(origStop) return origStop.apply(this, arguments); };
+})();
