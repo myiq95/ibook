@@ -1271,3 +1271,62 @@ function cleanForSpeech(text){
   try{ t = cleanForSpeech_original(text); }catch(e){ t=text; }
   return t.replace(/\./g,' ').replace(/\?/g,' ').replace(/=/g,' ').replace(/'/g,' ').replace(/"/g,' ').replace(/\s+/g,' ').trim();
 }
+
+
+// V19 Highlight - 문장 단위 작게, 건너뛰기 없음, 페이지 자동 넘김 + 싱크
+(function(){
+  if(window.__v19Highlight) return; window.__v19Highlight=true;
+  let lastActive = null;
+  function clearHighlight(){
+    if(lastActive){ try{ lastActive.classList.remove('active'); lastActive.classList.remove('tts-sentence'); }catch(e){} }
+    if(window.lastTtsNode){ try{ window.lastTtsNode.classList.remove('tts-active'); }catch(e){} }
+    lastActive=null; window.lastTtsNode=null;
+    document.querySelectorAll('.tts-word').forEach(span=>{
+      try{ const text=document.createTextNode(span.textContent); span.parentNode.replaceChild(text, span); }catch(e){}
+    });
+  }
+  function isVisible(el){
+    if(!el) return false;
+    const flow=document.getElementById('bookFlow'); if(!flow) return true;
+    const fr=flow.getBoundingClientRect(); const er=el.getBoundingClientRect();
+    return er.left >= fr.left-20 && er.right <= fr.right+20;
+  }
+  function autoTurnIfNeeded(node){
+    try{
+      if(!isVisible(node)){
+        const target=pageOfNode(node); const current=State.current?State.current.spread:0;
+        if(target>current && typeof next==='function'){ next(); }
+      }
+    }catch(e){}
+  }
+  window.highlightTtsSentence=function(){
+    clearHighlight();
+    const item=State.tts.queue?State.tts.queue[State.tts.idx]:null; if(!item) return;
+    let node=item.node; if(!node) return;
+    let parent=node.parentElement; if(!parent) return;
+    autoTurnIfNeeded(parent);
+    try{
+      const range=document.createRange();
+      const text=parent.textContent;
+      const idx=text.indexOf(item.text);
+      if(idx>=0){
+        let walker=document.createTreeWalker(parent, NodeFilter.SHOW_TEXT, null);
+        let tNode; let pos=0; let startNode=null, startOffset=0, endNode=null, endOffset=0;
+        while(tNode=walker.nextNode()){
+          const len=tNode.nodeValue.length;
+          if(!startNode && pos+len>=idx){ startNode=tNode; startOffset=idx-pos; }
+          if(pos+len>=idx+item.text.length){ endNode=tNode; endOffset=idx+item.text.length-pos; break; }
+          pos+=len;
+        }
+        if(startNode && endNode){
+          range.setStart(startNode, startOffset); range.setEnd(endNode, endOffset);
+          const span=document.createElement('span'); span.className='tts-sentence active';
+          try{ range.surroundContents(span); lastActive=span; window.lastTtsNode=span; return; }catch(e){}
+        }
+      }
+      parent.classList.add('tts-active'); lastActive=parent; window.lastTtsNode=parent;
+    }catch(e){ try{ parent.classList.add('tts-active'); lastActive=parent; }catch(e2){} }
+  };
+  const origStop=window.stopTTS;
+  window.stopTTS=function(){ clearHighlight(); if(origStop) return origStop.apply(this, arguments); };
+})();
