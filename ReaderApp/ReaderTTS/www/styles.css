@@ -397,8 +397,10 @@ input[type=range] { flex: 1; accent-color: var(--accent); height: 4px; }
   * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
 
-:root{--safe-top:env(safe-area-inset-top)} body{padding-top:env(safe-area-inset-top)} .topbar{padding-top:max(12px, env(safe-area-inset-top));}
-
-.tts-active { background: transparent!important; }
-.tts-word { background: rgba(255, 230, 120, 0.9); border-radius: 3px; padding: 0 2px; }
+/* V18 Safe area + Highlight fix */
+:root{--safe-top:env(safe-area-inset-top)}
+body{padding-top:env(safe-area-inset-top)}
+.topbar{padding-top:max(12px, env(safe-area-inset-top));}
+.tts-active { background: transparent !important; }
+.tts-word { background: rgba(255, 230, 120, 0.9); border-radius: 3px; padding: 0 2px; display:inline-block; }
 .tts-word.active { background: rgba(255, 200, 0, 0.95); box-shadow: 0 0 0 2px rgba(255,200,0,0.4); }
