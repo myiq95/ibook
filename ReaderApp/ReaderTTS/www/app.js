@@ -1117,7 +1117,46 @@ function boot(){
 document.addEventListener('DOMContentLoaded', boot);
 
 
-// V21 - 문장 span으로 미리 감싸기 + 작게 하이라이트, 절대 사라지지 않음
+// V22 Bridge - 지안 프리미엄 보이스 사용하도록 수정
+(function(){
+  const isNative = !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.tts);
+  if(!isNative) return;
+  window.NativeTTS = {
+    speak(t){
+      let txt=(t||"").trim(); if(!txt) return;
+      // 문장부호는 네이티브에서 처리하므로 여기선 제거 안함 - 그대로 전달
+      try{ window.webkit.messageHandlers.tts.postMessage({action:'speak', text:txt, rate:0.5, lang:'ko-KR'}); }catch(e){}
+    },
+    pause(){ try{ window.webkit.messageHandlers.tts.postMessage({action:'pause'}) }catch(e){} },
+    resume(){ try{ window.webkit.messageHandlers.tts.postMessage({action:'resume'}) }catch(e){} },
+    stop(){ try{ window.webkit.messageHandlers.tts.postMessage({action:'stop'}) }catch(e){} }
+  };
+  const nativeSynth = {
+    _speaking:false, _paused:false, _currentUtter:null,
+    get speaking(){return this._speaking;}, get pending(){return false;}, get paused(){return this._paused;},
+    speak(u){
+      const txt=(u.text||"").trim(); if(!txt){ try{ u.onend&&u.onend(); }catch(e){} return; }
+      this._speaking=true; this._paused=false; this._currentUtter=u;
+      window.NativeTTS.speak(txt);
+      setTimeout(()=>{ try{ u.onstart&&u.onstart(); }catch(e){} }, 20);
+    },
+    cancel(){ this._speaking=false; this._paused=false; try{ window.NativeTTS.stop(); }catch(e){} },
+    pause(){ this._paused=true; window.NativeTTS.pause(); },
+    resume(){ this._paused=false; window.NativeTTS.resume(); },
+    getVoices(){return [];}
+  };
+  try{ Object.defineProperty(window,'speechSynthesis',{value:nativeSynth, configurable:true}); }catch(e){ window.speechSynthesis=nativeSynth; }
+  window.onNativeTTSState=function(state){
+    const s=window.speechSynthesis; const u=s._currentUtter;
+    if(state==='playing'){ s._speaking=true; }
+    else if(state==='paused'){ s._paused=true; }
+    else if(state==='finished'){ s._speaking=false; s._paused=false; if(u){ try{ u.onend&&u.onend(); }catch(e){} } }
+    else if(state==='stopped'){ s._speaking=false; }
+  };
+})();
+
+
+// V21 Highlight
 (function(){
   if(window.__v21Highlight) return; window.__v21Highlight=true;
   const origBuild = window.buildTtsQueue;
@@ -1147,7 +1186,6 @@ document.addEventListener('DOMContentLoaded', boot);
   function clear(){
     if(last){ try{last.classList.remove('active');}catch(e){} last=null; }
     if(window.lastTtsNode){ try{window.lastTtsNode.classList.remove('tts-active');}catch(e){} window.lastTtsNode=null; }
-    document.querySelectorAll('.tts-word').forEach(s=>{ try{const t=document.createTextNode(s.textContent); s.parentNode.replaceChild(t,s);}catch(e){} });
   }
   function vis(el){
     const f=document.getElementById('bookFlow'); if(!f||!el) return true;
@@ -1173,3 +1211,47 @@ document.addEventListener('DOMContentLoaded', boot);
   };
   const os=window.stopTTS; window.stopTTS=function(){ clear(); if(os) return os.apply(this, arguments); };
 })();
+
+
+// V22 Wrapper
+(function(){
+  if(window.__v22Wrapper) return; window.__v22Wrapper=true;
+  window.startTts = function(){
+    try{
+      let q=[]; try{ q=buildTtsQueue(); }catch(e){ q=[]; }
+      if(!q||q.length===0){
+        setTimeout(()=>{
+          const q2=buildTtsQueue();
+          if(!q2||q2.length===0){ if(typeof toast==='function') toast('읽을 텍스트가 없습니다'); return; }
+          State.tts.queue=q2; doStart(q2);
+        }, 300); return;
+      }
+      State.tts.queue=q; doStart(q);
+    }catch(e){ console.error(e); }
+  };
+  function doStart(queue){
+    try{
+      if(State.tts.synth) State.tts.synth.cancel();
+      const info = State.perChapter ? State.perChapter.get(chapterKey()) : null;
+      let startIdx=0;
+      if(info){
+        const perView=info.single?1:2;
+        const firstPage=State.current.spread * perView;
+        const idx=queue.findIndex(s=>{ try{ return pageOfNode(s.node)>=firstPage; }catch(e){ return true; } });
+        if(idx>=0) startIdx=idx;
+      }
+      State.tts.idx=startIdx;
+      State.tts.speaking=true; State.tts.paused=false;
+      if(typeof setTtsPlayIcon==='function') setTtsPlayIcon('pause');
+      const bar=document.getElementById('ttsBar');
+      if(bar){ bar.hidden=false; requestAnimationFrame(()=>bar.classList.add('show')); }
+      speakNext();
+    }catch(e){ console.error(e); }
+  }
+})();
+
+
+function cleanForSpeech(text){
+  // 문장부호 제거하지 않고 그대로 전달 - 네이티브가 자연스럽게 처리
+  return text.replace(/\s+/g,' ').trim();
+}
