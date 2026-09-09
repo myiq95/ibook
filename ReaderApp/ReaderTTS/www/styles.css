@@ -398,3 +398,7 @@ input[type=range] { flex: 1; accent-color: var(--accent); height: 4px; }
 }
 
 :root{--safe-top:env(safe-area-inset-top)} body{padding-top:env(safe-area-inset-top)} .topbar{padding-top:max(12px, env(safe-area-inset-top));}
+
+.tts-active { background: transparent!important; }
+.tts-word { background: rgba(255, 230, 120, 0.9); border-radius: 3px; padding: 0 2px; }
+.tts-word.active { background: rgba(255, 200, 0, 0.95); box-shadow: 0 0 0 2px rgba(255,200,0,0.4); }
