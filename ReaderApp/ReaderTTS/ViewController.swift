@@ -10,7 +10,6 @@ class ViewController: UIViewController, WKScriptMessageHandler {
         config.mediaTypesRequiringUserActionForPlayback = []
         let userController = WKUserContentController()
         userController.add(self, name: "tts")
-        userController.add(self, name: "ttsVoices")
         config.userContentController = userController
         webView = WKWebView(frame: .zero, configuration: config)
         webView.translatesAutoresizingMaskIntoConstraints = false
@@ -27,6 +26,11 @@ class ViewController: UIViewController, WKScriptMessageHandler {
                 self?.webView.evaluateJavaScript("window.onNativeTTSState&&window.onNativeTTSState('\(state)')", completionHandler: nil)
             }
         }
+        TTSManager.shared.onIndex = { [weak self] idx in
+            DispatchQueue.main.async {
+                self?.webView.evaluateJavaScript("window.onNativeTTSIndex&&window.onNativeTTSIndex(\(idx))", completionHandler: nil)
+            }
+        }
         if let path = Bundle.main.path(forResource: "index", ofType: "html", inDirectory: "www") {
             let url = URL(fileURLWithPath: path)
             webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
@@ -36,7 +40,13 @@ class ViewController: UIViewController, WKScriptMessageHandler {
         guard let body = message.body as? [String: Any] else { return }
         let action = body["action"] as? String ?? ""
         switch action {
-        case "speak": let text = body["text"] as? String ?? ""; TTSManager.shared.speak(text: text, rate: 0.5, lang: "ko-KR")
+        case "speak":
+            let text = body["text"] as? String ?? ""
+            TTSManager.shared.speak(text: text, rate: 0.5, lang: "ko-KR")
+        case "speakQueue":
+            if let texts = body["texts"] as? [String], let idx = body["startIndex"] as? Int {
+                TTSManager.shared.speakQueue(texts: texts, startIndex: idx)
+            }
         case "pause": TTSManager.shared.pause()
         case "resume": TTSManager.shared.resume()
         case "stop": TTSManager.shared.stop()
