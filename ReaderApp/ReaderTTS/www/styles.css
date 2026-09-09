@@ -397,12 +397,4 @@ input[type=range] { flex: 1; accent-color: var(--accent); height: 4px; }
   * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
 
-.tts-sentence{background:rgba(255,240,120,0.55);border-radius:4px;padding:2px 4px}.tts-sentence.active{background:rgba(255,200,0,0.9)} .tts-word{all:unset}
-:root{--safe-top:env(safe-area-inset-top)} body{padding-top:env(safe-area-inset-top)} .topbar{padding-top:max(12px, env(safe-area-inset-top));}
-
-
-/* V20 Highlight - 오버레이 방식 */
-.tts-active { background: rgba(255, 230, 120, 0.5) !important; border-radius: 4px; }
-.tts-sentence, .tts-sentence.active { all: unset; }
-.tts-word, .tts-word.active { all: unset; }
-#bookFlow { position: relative; }
+.tts-sentence{display:inline;background:transparent;border-radius:4px;padding:1px 3px;transition:background .2s}.tts-sentence.active{background:rgba(255,214,0,0.55)!important;box-shadow:0 0 0 2px rgba(255,214,0,0.25)} .tts-active{background:transparent!important} .tts-word{all:unset} #bookFlow{position:relative} :root{--safe-top:env(safe-area-inset-top)} body{padding-top:env(safe-area-inset-top)} .topbar{padding-top:max(12px, env(safe-area-inset-top));}
