@@ -7,6 +7,7 @@ class ViewController: UIViewController, WKScriptMessageHandler {
         view.backgroundColor = UIColor(red: 0.96, green: 0.94, blue: 0.90, alpha: 1.0)
         let config = WKWebViewConfiguration()
         config.allowsInlineMediaPlayback = true
+        config.mediaTypesRequiringUserActionForPlayback = []
         let userController = WKUserContentController()
         userController.add(self, name: "tts")
         userController.add(self, name: "ttsVoices")
@@ -39,12 +40,6 @@ class ViewController: UIViewController, WKScriptMessageHandler {
         case "pause": TTSManager.shared.pause()
         case "resume": TTSManager.shared.resume()
         case "stop": TTSManager.shared.stop()
-        case "getVoices":
-            let voices = TTSManager.shared.getVoices()
-            if let jsonData = try? JSONSerialization.data(withJSONObject: voices),
-               let jsonString = String(data: jsonData, encoding: .utf8) {
-                self.webView.evaluateJavaScript("window.onNativeVoices&&window.onNativeVoices(\(jsonString))", completionHandler: nil)
-            }
         default: break
         }
     }
