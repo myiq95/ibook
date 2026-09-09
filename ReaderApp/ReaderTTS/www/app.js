@@ -1274,59 +1274,119 @@ function cleanForSpeech(text){
 
 
 // V19 Highlight - 문장 단위 작게, 건너뛰기 없음, 페이지 자동 넘김 + 싱크
+
+
+// V20 Highlight - 오버레이 방식, DOM을 건드리지 않음, 건너뛰기/사라짐 없음
 (function(){
-  if(window.__v19Highlight) return; window.__v19Highlight=true;
-  let lastActive = null;
+  if(window.__v20Highlight) return; window.__v20Highlight=true;
+  let lastOverlay = null;
+
   function clearHighlight(){
-    if(lastActive){ try{ lastActive.classList.remove('active'); lastActive.classList.remove('tts-sentence'); }catch(e){} }
-    if(window.lastTtsNode){ try{ window.lastTtsNode.classList.remove('tts-active'); }catch(e){} }
-    lastActive=null; window.lastTtsNode=null;
-    document.querySelectorAll('.tts-word').forEach(span=>{
-      try{ const text=document.createTextNode(span.textContent); span.parentNode.replaceChild(text, span); }catch(e){}
+    if(lastOverlay){
+      try{ lastOverlay.remove(); }catch(e){}
+      lastOverlay=null;
+    }
+    if(window.lastTtsNode){ try{ window.lastTtsNode.classList.remove('tts-active'); }catch(e){} window.lastTtsNode=null; }
+    // V18 잔해 제거
+    document.querySelectorAll('.tts-word').forEach(s=>{ try{ const t=document.createTextNode(s.textContent); s.parentNode.replaceChild(t,s); }catch(e){} });
+    document.querySelectorAll('.tts-sentence').forEach(s=>{
+      try{
+        const parent=s.parentNode;
+        while(s.firstChild) parent.insertBefore(s.firstChild, s);
+        parent.removeChild(s);
+      }catch(e){}
     });
   }
+
   function isVisible(el){
-    if(!el) return false;
-    const flow=document.getElementById('bookFlow'); if(!flow) return true;
+    const flow=document.getElementById('bookFlow'); if(!flow||!el) return true;
     const fr=flow.getBoundingClientRect(); const er=el.getBoundingClientRect();
-    return er.left >= fr.left-20 && er.right <= fr.right+20;
+    return er.left >= fr.left-20 && er.right <= fr.right+20 && er.top >= fr.top-20 && er.bottom <= fr.bottom+100;
   }
+
   function autoTurnIfNeeded(node){
     try{
       if(!isVisible(node)){
-        const target=pageOfNode(node); const current=State.current?State.current.spread:0;
+        const target=pageOfNode(node);
+        const current=State.current?State.current.spread:0;
         if(target>current && typeof next==='function'){ next(); }
       }
     }catch(e){}
   }
-  window.highlightTtsSentence=function(){
+
+  window.highlightTtsSentence = function(){
     clearHighlight();
-    const item=State.tts.queue?State.tts.queue[State.tts.idx]:null; if(!item) return;
-    let node=item.node; if(!node) return;
-    let parent=node.parentElement; if(!parent) return;
+    const item = State.tts.queue ? State.tts.queue[State.tts.idx] : null;
+    if(!item || !item.node) return;
+    let node = item.node;
+    let parent = node.parentElement;
+    if(!parent) return;
+
     autoTurnIfNeeded(parent);
+
     try{
-      const range=document.createRange();
-      const text=parent.textContent;
-      const idx=text.indexOf(item.text);
-      if(idx>=0){
-        let walker=document.createTreeWalker(parent, NodeFilter.SHOW_TEXT, null);
-        let tNode; let pos=0; let startNode=null, startOffset=0, endNode=null, endOffset=0;
-        while(tNode=walker.nextNode()){
-          const len=tNode.nodeValue.length;
-          if(!startNode && pos+len>=idx){ startNode=tNode; startOffset=idx-pos; }
-          if(pos+len>=idx+item.text.length){ endNode=tNode; endOffset=idx+item.text.length-pos; break; }
-          pos+=len;
-        }
-        if(startNode && endNode){
-          range.setStart(startNode, startOffset); range.setEnd(endNode, endOffset);
-          const span=document.createElement('span'); span.className='tts-sentence active';
-          try{ range.surroundContents(span); lastActive=span; window.lastTtsNode=span; return; }catch(e){}
-        }
+      // 텍스트 노드 범위 찾기
+      const range = document.createRange();
+      // item.text는 clean된 텍스트일 수 있으므로 원본 텍스트 노드 전체를 하이라이트하는 것이 더 안정적
+      // 문장이 텍스트 노드 전체라면 그 노드만, 아니면 부모의 해당 부분만
+      const textNode = node;
+      if(textNode.nodeType===3){
+        range.selectNodeContents(textNode);
+      } else {
+        range.selectNodeContents(parent);
       }
-      parent.classList.add('tts-active'); lastActive=parent; window.lastTtsNode=parent;
-    }catch(e){ try{ parent.classList.add('tts-active'); lastActive=parent; }catch(e2){} }
+
+      const rects = range.getClientRects();
+      if(!rects || rects.length===0){
+        // fallback: 부모에 클래스
+        parent.classList.add('tts-active');
+        window.lastTtsNode=parent;
+        return;
+      }
+
+      // 오버레이 컨테이너 생성
+      const flow = document.getElementById('bookFlow');
+      const flowRect = flow ? flow.getBoundingClientRect() : {left:0, top:0};
+      
+      const overlay = document.createElement('div');
+      overlay.style.position='absolute';
+      overlay.style.pointerEvents='none';
+      overlay.style.zIndex='5';
+
+      for(let i=0;i<rects.length;i++){
+        const r = rects[i];
+        // 페이지 컬럼 안에 있는지 체크 (flow 내부)
+        if(r.width<2 || r.height<2) continue;
+        const hl = document.createElement('div');
+        hl.style.position='absolute';
+        hl.style.left = (r.left - flowRect.left + flow.scrollLeft) + 'px';
+        hl.style.top = (r.top - flowRect.top + flow.scrollTop) + 'px';
+        hl.style.width = r.width + 'px';
+        hl.style.height = r.height + 'px';
+        hl.style.background = 'rgba(255, 214, 0, 0.45)';
+        hl.style.borderRadius = '4px';
+        hl.style.transition = 'background 0.15s';
+        overlay.appendChild(hl);
+      }
+
+      if(flow){
+        // flow를 relative로
+        if(getComputedStyle(flow).position==='static') flow.style.position='relative';
+        flow.appendChild(overlay);
+        lastOverlay=overlay;
+        window.lastTtsNode=parent;
+      } else {
+        parent.classList.add('tts-active');
+        window.lastTtsNode=parent;
+      }
+
+    }catch(e){
+      console.error('highlight error', e);
+      try{ parent.classList.add('tts-active'); window.lastTtsNode=parent; }catch(e2){}
+    }
   };
-  const origStop=window.stopTTS;
-  window.stopTTS=function(){ clearHighlight(); if(origStop) return origStop.apply(this, arguments); };
+
+  const origStop = window.stopTTS;
+  window.stopTTS = function(){ clearHighlight(); if(origStop) return origStop.apply(this, arguments); };
 })();
+
