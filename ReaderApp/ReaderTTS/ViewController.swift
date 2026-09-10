@@ -21,6 +21,11 @@ class ViewController: UIViewController, WKScriptMessageHandler {
             webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             webView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
+        // 중복 방지: 포그라운드 올 때 기존 웹 음성 정지
+        NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { _ in
+            self.webView.evaluateJavaScript("if(window.speechSynthesis){window.speechSynthesis.cancel(); window.__isNativeQueueActive=false;}", completionHandler: nil)
+            TTSManager.shared.stop()
+        }
         TTSManager.shared.onState = { [weak self] state in
             DispatchQueue.main.async {
                 self?.webView.evaluateJavaScript("window.onNativeTTSState&&window.onNativeTTSState('\(state)')", completionHandler: nil)
