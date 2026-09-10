@@ -1369,6 +1369,28 @@ function cleanForSpeech(t){
     .trim();
 }
 
-// V27 - 중복 완전 차단
+// V29 단어 단위 하이라이트
+window.onNativeTTSWord = function(sentIdx, charStart, charLen){
+  try{
+    const q = State.tts.queue;
+    if(!q ||!q[sentIdx]) return;
+    const span = q[sentIdx].span;
+    if(!span) return;
+    span.querySelectorAll('.tts-word.active').forEach(w=>w.classList.remove('active'));
+    const words = span.querySelectorAll('.tts-word');
+    if(!words.length) return;
+    // char 위치로 단어 찾기
+    let cum=0, target=null;
+    for(let w of words){
+      if(charStart >= cum && charStart < cum + w.textContent.length){ target=w; break; }
+      cum += w.textContent.length + 1;
+    }
+    if(!target) target = words[Math.min(Math.floor(charStart/5), words.length-1)];
+    if(target){
+      if(window._lastW && window._lastW!==target) window._lastW.classList.remove('active');
+      target.classList.add('active');
+      window._lastW = target;
+    }
+  }catch(e){}
+};
 window.speakNext = function(){ return; };
-window.__isNativeQueueActive = true;
