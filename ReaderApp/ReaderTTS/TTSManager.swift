@@ -5,21 +5,32 @@ class TTSManager: NSObject, AVSpeechSynthesizerDelegate {
     private let synth = AVSpeechSynthesizer()
     var onState: ((String) -> Void)?
     var onIndex: ((Int) -> Void)?
+    var onWord: ((Int, Int, Int) -> Void)? // (sentenceIdx, charStart, charLength)
     private var queue: [String] = []
     private var currentIdx: Int = 0
     private var isQueueMode: Bool = false
-    private var wasPausedByInterruption: Bool = false
+    private var keepAliveTimer: Timer?
 
     override init() {
         super.init()
         synth.delegate = self
         configureAudio()
         NotificationCenter.default.addObserver(self, selector: #selector(handleInterruption), name: AVAudioSession.interruptionNotification, object: nil)
+        startKeepAliveTimer()
+    }
+
+    private func startKeepAliveTimer(){
+        keepAliveTimer?.invalidate()
+        keepAliveTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+            if self.synth.isSpeaking {
+                try? AVAudioSession.sharedInstance().setActive(true)
+            }
+        }
     }
 
     private func configureAudio() {
         do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio, options: [.mixWithOthers, .allowAirPlay, .duckOthers])
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio, options: [.mixWithOthers, .allowAirPlay, .defaultToSpeaker])
             try AVAudioSession.sharedInstance().setActive(true, options: .notifyOthersOnDeactivation)
         } catch { print("AudioSession error: \(error)") }
     }
@@ -37,14 +48,9 @@ class TTSManager: NSObject, AVSpeechSynthesizerDelegate {
         guard let userInfo = notification.userInfo,
               let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
               let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
-        if type == .began {
-            wasPausedByInterruption = synth.isSpeaking
-        } else if type == .ended {
-            if wasPausedByInterruption {
-                wasPausedByInterruption = false
-                keepAlive()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self.resume() }
-            }
+        if type == .ended {
+            keepAlive()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self.resume() }
         }
     }
 
@@ -69,14 +75,12 @@ class TTSManager: NSObject, AVSpeechSynthesizerDelegate {
     }
 
     func speakQueue(texts: [String], startIndex: Int) {
-        // 기존 큐 완전 정리 후 새 큐 시작 - 중복 방지
         DispatchQueue.main.async {
             self.synth.stopSpeaking(at: .immediate)
             self.queue = texts
             self.currentIdx = startIndex
             self.isQueueMode = true
             self.keepAlive()
-            // 약간의 딜레이 후 시작 (stop이 완료되도록)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 self.speakQueueNext()
             }
@@ -107,16 +111,22 @@ class TTSManager: NSObject, AVSpeechSynthesizerDelegate {
     func resumeIfPaused() {
         DispatchQueue.main.async {
             if !self.synth.isSpeaking && self.isQueueMode {
-                // 멈췄으면 현재 인덱스부터 재개
                 self.keepAlive()
                 self.speakQueueNext()
-            } else if self.synth.isSpeaking {
+            } else {
                 self.keepAlive()
                 self.synth.continueSpeaking()
+                self.onState?("playing")
             }
         }
     }
     func stop() { DispatchQueue.main.async { self.isQueueMode = false; self.queue = []; self.synth.stopSpeaking(at: .immediate); self.onState?("stopped") } }
+
+    // 단어 단위 하이라이트 핵심
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, willSpeakRangeOfSpeechString range: NSRange, utterance: AVSpeechUtterance) {
+        keepAlive()
+        onWord?(currentIdx, range.location, range.length)
+    }
 
     func speechSynthesizer(_ s: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         keepAlive()
