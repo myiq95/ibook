@@ -4,7 +4,6 @@ import AVFoundation
 
 class ViewController: UIViewController, WKScriptMessageHandler {
     var webView: WKWebView!
-    var isReturningFromLock = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -26,22 +25,14 @@ class ViewController: UIViewController, WKScriptMessageHandler {
             webView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
 
-        // 백그라운드 -> 포그라운드: 멈추지 말고 오디오 세션만 살리기 (중복 방지 stop 제거!)
+        // 잠금화면에서 돌아올 때 절대 stop() 하지 않음 - 오디오 세션만 살리고 resume
         NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { _ in
             try? AVAudioSession.sharedInstance().setActive(true)
-            // 웹 쪽 가짜 speechSynthesis만 취소, 네이티브는 그대로 둠
-            self.webView.evaluateJavaScript("if(window.speechSynthesis && window.speechSynthesis._queue){ window.speechSynthesis.cancel(); }", completionHandler: nil)
-            // 네이티브가 paused 상태면 resume
-            if self.isReturningFromLock {
-                self.isReturningFromLock = false
-                // 0.3초 뒤에 resume (오디오 세션 활성화 후)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    TTSManager.shared.resumeIfPaused()
-                }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                TTSManager.shared.resumeIfPaused()
             }
         }
         NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { _ in
-            self.isReturningFromLock = true
             try? AVAudioSession.sharedInstance().setActive(true)
         }
 
@@ -55,6 +46,12 @@ class ViewController: UIViewController, WKScriptMessageHandler {
                 self?.webView.evaluateJavaScript("window.onNativeTTSIndex&&window.onNativeTTSIndex(\(idx))", completionHandler: nil)
             }
         }
+        TTSManager.shared.onWord = { [weak self] sentIdx, loc, len in
+            DispatchQueue.main.async {
+                self?.webView.evaluateJavaScript("window.onNativeTTSWord&&window.onNativeTTSWord(\(sentIdx),\(loc),\(len))", completionHandler: nil)
+            }
+        }
+
         if let path = Bundle.main.path(forResource: "index", ofType: "html", inDirectory: "www") {
             let url = URL(fileURLWithPath: path)
             webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
