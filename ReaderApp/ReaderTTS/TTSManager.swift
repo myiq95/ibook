@@ -4,15 +4,17 @@ class TTSManager: NSObject, AVSpeechSynthesizerDelegate {
     static let shared = TTSManager()
     private let synth = AVSpeechSynthesizer()
     var onState: ((String) -> Void)?
-    var onIndex: ((Int) -> Void)? // 현재 읽는 문장 인덱스 콜백
+    var onIndex: ((Int) -> Void)?
     private var queue: [String] = []
     private var currentIdx: Int = 0
     private var isQueueMode: Bool = false
+    private var wasPausedByInterruption: Bool = false
 
     override init() {
         super.init()
         synth.delegate = self
         configureAudio()
+        NotificationCenter.default.addObserver(self, selector: #selector(handleInterruption), name: AVAudioSession.interruptionNotification, object: nil)
     }
 
     private func configureAudio() {
@@ -31,7 +33,21 @@ class TTSManager: NSObject, AVSpeechSynthesizerDelegate {
         return nil
     }
 
-    // 단일 문장
+    @objc private func handleInterruption(notification: Notification) {
+        guard let userInfo = notification.userInfo,
+              let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
+        if type == .began {
+            wasPausedByInterruption = synth.isSpeaking
+        } else if type == .ended {
+            if wasPausedByInterruption {
+                wasPausedByInterruption = false
+                keepAlive()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self.resume() }
+            }
+        }
+    }
+
     func speak(text: String, rate: Float, lang: String) {
         isQueueMode = false
         queue = []
@@ -52,19 +68,26 @@ class TTSManager: NSObject, AVSpeechSynthesizerDelegate {
         }
     }
 
-    // 전체 큐 - 백그라운드 핵심!
     func speakQueue(texts: [String], startIndex: Int) {
-        isQueueMode = true
-        queue = texts
-        currentIdx = startIndex
-        keepAlive()
-        speakQueueNext()
+        // 기존 큐 완전 정리 후 새 큐 시작 - 중복 방지
+        DispatchQueue.main.async {
+            self.synth.stopSpeaking(at: .immediate)
+            self.queue = texts
+            self.currentIdx = startIndex
+            self.isQueueMode = true
+            self.keepAlive()
+            // 약간의 딜레이 후 시작 (stop이 완료되도록)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                self.speakQueueNext()
+            }
+        }
     }
 
     private func speakQueueNext() {
         guard isQueueMode else { return }
         guard currentIdx < queue.count else {
             onState?("finished")
+            isQueueMode = false
             return
         }
         let txt = queue[currentIdx].trimmingCharacters(in: .whitespacesAndNewlines)
@@ -81,6 +104,18 @@ class TTSManager: NSObject, AVSpeechSynthesizerDelegate {
 
     func pause() { DispatchQueue.main.async { self.synth.pauseSpeaking(at: .word); self.onState?("paused") } }
     func resume() { DispatchQueue.main.async { self.keepAlive(); self.synth.continueSpeaking(); self.onState?("playing") } }
+    func resumeIfPaused() {
+        DispatchQueue.main.async {
+            if !self.synth.isSpeaking && self.isQueueMode {
+                // 멈췄으면 현재 인덱스부터 재개
+                self.keepAlive()
+                self.speakQueueNext()
+            } else if self.synth.isSpeaking {
+                self.keepAlive()
+                self.synth.continueSpeaking()
+            }
+        }
+    }
     func stop() { DispatchQueue.main.async { self.isQueueMode = false; self.queue = []; self.synth.stopSpeaking(at: .immediate); self.onState?("stopped") } }
 
     func speechSynthesizer(_ s: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
