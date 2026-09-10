@@ -1368,3 +1368,7 @@ function cleanForSpeech(t){
     .replace(/\s+/g,' ')
     .trim();
 }
+
+// V27 - 중복 완전 차단
+window.speakNext = function(){ return; };
+window.__isNativeQueueActive = true;
