@@ -397,22 +397,10 @@ input[type=range] { flex: 1; accent-color: var(--accent); height: 4px; }
   * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
 
-/* V26 - 문장 단위 작게 + 잘림 방지 */
-.tts-sentence {
-  display: inline;
-  background: transparent;
-  border-radius: 0;
-  padding: 0;
-  margin: 0;
-}
-.tts-sentence.active {
-  background: rgba(255, 214, 0, 0.48) !important;
-  border-radius: 3px;
-  box-decoration-break: clone;
-  -webkit-box-decoration-break: clone;
-}
-.tts-active { background: transparent !important; }
-#bookFlow { position: relative; }
-:root{--safe-top:env(safe-area-inset-top)}
-body{padding-top:env(safe-area-inset-top)}
-.topbar{padding-top:max(12px, env(safe-area-inset-top));}
+:root{--safe-top:env(safe-area-inset-top)} body{padding-top:env(safe-area-inset-top)} .topbar{padding-top:max(12px, env(safe-area-inset-top));}
+
+.tts-sentence{ display:inline; background:transparent; padding:0; margin:0; }
+.tts-sentence.active{ background: rgba(255,214,0,0.15)!important; border-radius:2px; }
+.tts-word{ display:inline; padding:0 1px; margin:0; border-radius:3px; }
+.tts-word.active{ background: rgba(255,214,0,0.90)!important; border-radius:4px; }
+.tts-active{ background:transparent!important; }
