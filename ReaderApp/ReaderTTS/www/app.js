@@ -1,3 +1,39 @@
+
+// V15 Bridge - Thermal Optimized
+(function(){
+  const isNative = !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.tts);
+  if(!isNative) return;
+  window.NativeTTS = {
+    speak(t){ let txt=(t||"").trim(); if(!txt) return; txt=txt.replace(/\./g,' ').replace(/\?/g,' ').replace(/=/g,' ').replace(/'/g,' ').replace(/"/g,' ').replace(/\s+/g,' ').trim(); if(!txt) return; try{ window.webkit.messageHandlers.tts.postMessage({action:'speak', text:txt, rate:0.5, lang:'ko-KR'}); }catch(e){} },
+    pause(){ try{ window.webkit.messageHandlers.tts.postMessage({action:'pause'}) }catch(e){} },
+    resume(){ try{ window.webkit.messageHandlers.tts.postMessage({action:'resume'}) }catch(e){} },
+    stop(){ try{ window.webkit.messageHandlers.tts.postMessage({action:'stop'}) }catch(e){} }
+  };
+  const nativeSynth = {
+    _speaking:false, _paused:false, _currentUtter:null,
+    get speaking(){return this._speaking;}, get pending(){return false;}, get paused(){return this._paused;},
+    speak(u){
+      const txt=(u.text||"").trim(); if(!txt){ try{ u.onend&&u.onend(); }catch(e){} return; }
+      this._speaking=true; this._paused=false; this._currentUtter=u;
+      window.NativeTTS.speak(txt);
+      // onstart는 50ms 후 한 번만
+      setTimeout(()=>{ try{ u.onstart&&u.onstart(); }catch(e){} }, 50);
+    },
+    cancel(){ this._speaking=false; this._paused=false; try{ window.NativeTTS.stop(); }catch(e){} },
+    pause(){ this._paused=true; window.NativeTTS.pause(); },
+    resume(){ this._paused=false; window.NativeTTS.resume(); },
+    getVoices(){return [];}
+  };
+  try{ Object.defineProperty(window,'speechSynthesis',{value:nativeSynth, configurable:true}); }catch(e){ window.speechSynthesis=nativeSynth; }
+  window.onNativeTTSState=function(state){
+    const s=window.speechSynthesis; const u=s._currentUtter;
+    if(state==='playing'){ s._speaking=true; }
+    else if(state==='paused'){ s._paused=true; }
+    else if(state==='finished'){ s._speaking=false; s._paused=false; if(u){ try{ u.onend&&u.onend(); }catch(e){} } }
+    else if(state==='stopped'){ s._speaking=false; }
+  };
+})();
+
 /* =================================================================
    서재 — 프리미엄 독서 앱  |  app.js
    TXT · MD · DOCX · PDF · EPUB  →  통합 리더
@@ -1117,217 +1153,45 @@ function boot(){
 document.addEventListener('DOMContentLoaded', boot);
 
 
-// V26 Final - 문장 단위로 쪼개기 + 백그라운드 큐 방식
+// V15 Wrapper - thermal fix: queue caching, no repeated build
 (function(){
-  const isNative = !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.tts);
-  if(!isNative) return;
-
-  window.NativeTTS = {
-    speak(t){
-      let txt=(t||"").trim(); if(!txt) return;
-      txt = txt.replace(/\./g,' ').replace(/\?/g,' ').replace(/=/g,' ').replace(/'/g,' ').replace(/"/g,' ').replace(/\s+/g,' ').trim();
-      if(!txt) return;
-      try{ window.webkit.messageHandlers.tts.postMessage({action:'speak', text:txt, rate:0.5, lang:'ko-KR'}); }catch(e){}
-    },
-    speakQueue(texts, startIdx){
-      let cleaned = texts.map(t=> t.replace(/\./g,' ').replace(/\?/g,' ').replace(/=/g,' ').replace(/'/g,' ').replace(/"/g,' ').replace(/\s+/g,' ').trim()).filter(t=>t.length>0);
-      try{ window.webkit.messageHandlers.tts.postMessage({action:'speakQueue', texts:cleaned, startIndex:startIdx}); }catch(e){}
-    },
-    pause(){ try{ window.webkit.messageHandlers.tts.postMessage({action:'pause'}) }catch(e){} },
-    resume(){ try{ window.webkit.messageHandlers.tts.postMessage({action:'resume'}) }catch(e){} },
-    stop(){ try{ window.webkit.messageHandlers.tts.postMessage({action:'stop'}) }catch(e){} }
-  };
-
-  const nativeSynth = {
-    _speaking:false, _paused:false, _currentUtter:null, _queue:[], _idx:0,
-    get speaking(){return this._speaking;}, get pending(){return false;}, get paused(){return this._paused;},
-    speak(u){
-      const txt=(u.text||"").trim(); if(!txt){ try{ u.onend&&u.onend(); }catch(e){} return; }
-      this._speaking=true; this._paused=false; this._currentUtter=u;
-      window.NativeTTS.speak(txt);
-      setTimeout(()=>{ try{ u.onstart&&u.onstart(); }catch(e){} }, 20);
-    },
-    speakQueue(texts, startIdx){
-      this._queue=texts; this._idx=startIdx;
-      window.NativeTTS.speakQueue(texts, startIdx);
-    },
-    cancel(){ this._speaking=false; this._paused=false; this._queue=[]; try{ window.NativeTTS.stop(); }catch(e){} },
-    pause(){ this._paused=true; window.NativeTTS.pause(); },
-    resume(){ this._paused=false; window.NativeTTS.resume(); },
-    getVoices(){return [];}
-  };
-  try{ Object.defineProperty(window,'speechSynthesis',{value:nativeSynth, configurable:true}); }catch(e){ window.speechSynthesis=nativeSynth; }
-  window.onNativeTTSState=function(state){
-    const s=window.speechSynthesis; const u=s._currentUtter;
-    if(state==='playing'){ s._speaking=true; }
-    else if(state==='paused'){ s._paused=true; }
-    else if(state==='finished'){
-      s._speaking=false; s._paused=false;
-      if(s._queue && s._queue.length>0){
-        // queue mode - native handles next
-      } else {
-        if(u){ try{ u.onend&&u.onend(); }catch(e){} }
-      }
-    }
-    else if(state==='stopped'){ s._speaking=false; }
-  };
-  window.onNativeTTSIndex=function(idx){
-    try{
-      State.tts.idx = idx;
-      if(typeof highlightTtsSentence==='function') highlightTtsSentence();
-      if(typeof updateTtsBar==='function') updateTtsBar();
-    }catch(e){}
-  };
-})();
-
-// V26 Highlight - 문장 단위로 텍스트 노드 쪼개기
-(function(){
-  if(window.__v26H) return; window.__v26H=true;
-
-  const origBuild = window.buildTtsQueue;
-  if(!origBuild) return;
-
-  function splitSentences(text){
-    // 한글/영문 문장 분리
-    const re = /[^.!?\n]+[.!?]?/g;
-    let m, res=[];
-    // 더 정확한 한글 분리: . ! ? 뒤 공백
-    const parts = text.split(/(?<=[.!?。！？])\s+/);
-    parts.forEach(p=>{
-      let t=p.trim();
-      if(t.length>0) res.push(t);
-    });
-    if(res.length===0 && text.trim().length>0) res=[text.trim()];
-    return res;
+  if(window.__v15Patched) return; window.__v15Patched=true;
+  let cachedQueue=null;
+  let cachedKey=null;
+  function getQueue(){
+    const key = State.current ? State.current.chapter + ':' + State.current.spread : 'no';
+    if(cachedQueue && cachedKey===key) return cachedQueue;
+    const q = buildTtsQueue();
+    cachedQueue=q; cachedKey=key;
+    return q;
+  }
+  // 파일 열리면 캐시 무효화
+  const origOpen = window.openChapter;
+  if(origOpen){
+    window.openChapter = function(){ cachedQueue=null; cachedKey=null; return origOpen.apply(this, arguments); }
   }
 
-  window.buildTtsQueue = function(){
-    let queue=[];
+  window.startTts = function(){
     try{
-      // 먼저 원본 큐를 만들지 말고 직접 flow에서 문장 단위 span 만들기
-      const flow = document.getElementById('bookFlow');
-      if(!flow) return origBuild.apply(this, arguments);
-
-      // 기존 tts-sentence 제거
-      flow.querySelectorAll('.tts-sentence').forEach(s=>{
-        try{
-          const parent=s.parentNode;
-          while(s.firstChild) parent.insertBefore(s.firstChild, s);
-          parent.removeChild(s);
-        }catch(e){}
-      });
-
-      // 텍스트 노드들을 찾아서 문장 단위로 쪼개기
-      const walker = document.createTreeWalker(flow, NodeFilter.SHOW_TEXT, {
-        acceptNode: function(node){
-          if(!node.nodeValue || node.nodeValue.trim().length<2) return NodeFilter.FILTER_REJECT;
-          if(node.parentElement && (node.parentElement.tagName==='SCRIPT' || node.parentElement.tagName==='STYLE')) return NodeFilter.FILTER_REJECT;
-          return NodeFilter.FILTER_ACCEPT;
-        }
-      });
-      let textNodes=[];
-      let n;
-      while(n=walker.nextNode()){ textNodes.push(n); }
-
-      textNodes.forEach(textNode=>{
-        const originalText = textNode.nodeValue;
-        if(!originalText || originalText.trim().length<2) return;
-        // 이미 긴 문단이 하나의 텍스트 노드
-        const sentences = splitSentences(originalText);
-        if(sentences.length<=1){
-          // 1문장이면 그대로 span 감싸기
-          const span=document.createElement('span');
-          span.className='tts-sentence';
-          span.textContent=originalText;
-          textNode.parentNode.insertBefore(span, textNode);
-          textNode.parentNode.removeChild(textNode);
-          queue.push({node: span.firstChild, text: originalText.trim(), span: span});
-        } else {
-          // 여러 문장이면 각각 span으로 분리
-          const fragment=document.createDocumentFragment();
-          sentences.forEach(sent=>{
-            const span=document.createElement('span');
-            span.className='tts-sentence';
-            span.textContent=sent + ' ';
-            fragment.appendChild(span);
-            queue.push({node: span.firstChild, text: sent.trim(), span: span});
-          });
-          textNode.parentNode.insertBefore(fragment, textNode);
-          textNode.parentNode.removeChild(textNode);
-        }
-      });
-
-      // 만약 큐가 비어있으면 원본 방식 fallback
-      if(queue.length===0){
-        return origBuild.apply(this, arguments);
-      }
-
-      // cleanForSpeech로 텍스트 정리된 버전으로 업데이트
-      queue.forEach(item=>{
-        try{ item.text = cleanForSpeech(item.text); }catch(e){}
-      });
-      queue = queue.filter(item=> item.text && item.text.length>1);
-
-      return queue;
-    }catch(e){
-      console.error('V26 build error', e);
-      try{ return origBuild.apply(this, arguments); }catch(e2){ return []; }
-    }
-  };
-
-  let lastActive=null;
-  function clear(){
-    if(lastActive){ try{lastActive.classList.remove('active');}catch(e){} lastActive=null; }
-    if(window.lastTtsNode){ try{window.lastTtsNode.classList.remove('tts-active');}catch(e){} window.lastTtsNode=null; }
-  }
-  function vis(el){
-    const flow=document.getElementById('bookFlow'); if(!flow||!el) return true;
-    const fr=flow.getBoundingClientRect(); const er=el.getBoundingClientRect();
-    return er.left>=fr.left-30 && er.right<=fr.right+30;
-  }
-  function autoTurn(node){
-    try{
-      if(!vis(node)){
-        const target=pageOfNode(node);
-        const cur=State.current?State.current.spread:0;
-        if(target>cur && typeof next==='function') next();
-      }
-    }catch(e){}
-  }
-  window.highlightTtsSentence=function(){
-    clear();
-    const item = State.tts.queue ? State.tts.queue[State.tts.idx] : null;
-    if(!item || !item.span) return;
-    const sp=item.span;
-    autoTurn(sp);
-    sp.classList.add('active');
-    lastActive=sp;
-    window.lastTtsNode=sp;
-  };
-  const origStop=window.stopTTS;
-  window.stopTTS=function(){ clear(); if(origStop) return origStop.apply(this, arguments); };
-})();
-
-// V26 Wrapper - 네이티브 큐 방식 사용
-(function(){
-  if(window.__v26W) return; window.__v26W=true;
-  window.startTts=function(){
-    try{
-      let q=[]; try{ q=buildTtsQueue(); }catch(e){ q=[]; }
+      let q=getQueue();
       if(!q||q.length===0){
         setTimeout(()=>{
-          const q2=buildTtsQueue();
+          cachedQueue=null;
+          const q2=getQueue();
           if(!q2||q2.length===0){ if(typeof toast==='function') toast('읽을 텍스트가 없습니다'); return; }
-          State.tts.queue=q2; doStart(q2);
-        }, 300); return;
+          State.tts.queue=q2;
+          doStart(q2);
+        }, 300);
+        return;
       }
-      State.tts.queue=q; doStart(q);
+      State.tts.queue=q;
+      doStart(q);
     }catch(e){ console.error(e); }
   };
   function doStart(queue){
     try{
       if(State.tts.synth) State.tts.synth.cancel();
-      const info=State.perChapter?State.perChapter.get(chapterKey()):null;
+      const info = State.perChapter ? State.perChapter.get(chapterKey()) : null;
       let startIdx=0;
       if(info){
         const perView=info.single?1:2;
@@ -1338,59 +1202,155 @@ document.addEventListener('DOMContentLoaded', boot);
       State.tts.idx=startIdx;
       State.tts.speaking=true; State.tts.paused=false;
       if(typeof setTtsPlayIcon==='function') setTtsPlayIcon('pause');
-      const bar=document.getElementById('ttsBar');
-      if(bar){ bar.hidden=false; requestAnimationFrame(()=>bar.classList.add('show')); }
-
-      // 네이티브 큐 방식으로 읽기 - 화면 꺼져도 계속
-      const texts = queue.map(item=> item.text).filter(t=> t && t.length>0);
-      if(window.NativeTTS && window.NativeTTS.speakQueue){
-        window.NativeTTS.speakQueue(texts, startIdx);
-      } else {
-        // fallback
-        speakNext();
-      }
+      if(el.ttsBar){ el.ttsBar.hidden=false; requestAnimationFrame(()=>el.ttsBar.classList.add('show')); }
+      speakNext();
     }catch(e){ console.error(e); }
+  }
+  // 하이라이트 최적화 - requestAnimationFrame으로 묶음
+  if(typeof highlightTtsSentence==='function'){
+    const origHighlight = highlightTtsSentence;
+    let rafId=null;
+    window.highlightTtsSentence = function(){
+      if(rafId) return;
+      rafId = requestAnimationFrame(()=>{
+        rafId=null;
+        origHighlight.apply(this, arguments);
+      });
+    };
   }
 })();
 
-function cleanForSpeech(t){
-  return t.replace(/[#*※◇◆■□★☆○●▶▷▸→←↑↓·•◦・♪♫♬†‡§¶°]/g,' ')
-    .replace(/[~〜∼]/g,' ')
-    .replace(/`+/g,' ')
-    .replace(/[「」『』《》〈〉]/g,' ')
-    .replace(/…/g,' ')
-    .replace(/[—–]/g,' ')
-    .replace(/\./g,' ')
-    .replace(/\?/g,' ')
-    .replace(/=/g,' ')
-    .replace(/'/g,' ')
-    .replace(/"/g,' ')
-    .replace(/\s+/g,' ')
-    .trim();
-}
 
-// V29 단어 단위 하이라이트
-window.onNativeTTSWord = function(sentIdx, charStart, charLen){
-  try{
-    const q = State.tts.queue;
-    if(!q ||!q[sentIdx]) return;
-    const span = q[sentIdx].span;
-    if(!span) return;
-    span.querySelectorAll('.tts-word.active').forEach(w=>w.classList.remove('active'));
-    const words = span.querySelectorAll('.tts-word');
-    if(!words.length) return;
-    // char 위치로 단어 찾기
-    let cum=0, target=null;
-    for(let w of words){
-      if(charStart >= cum && charStart < cum + w.textContent.length){ target=w; break; }
-      cum += w.textContent.length + 1;
+// V17 - User requested: do NOT read . = ? ' "
+(function(){
+  const punctRE = /[.=?'"\uFF1D\uFF1F]/g;
+  const origClean = window.cleanForSpeech;
+  window.cleanForSpeech = function(text){
+    let t = text;
+    if(origClean){
+      try{ t = origClean(text); }catch(e){ t=text; }
     }
-    if(!target) target = words[Math.min(Math.floor(charStart/5), words.length-1)];
-    if(target){
-      if(window._lastW && window._lastW!==target) window._lastW.classList.remove('active');
-      target.classList.add('active');
-      window._lastW = target;
-    }
-  }catch(e){}
-};
-window.speakNext = function(){ return; };
+    return t.replace(/\./g,' ').replace(/\?/g,' ').replace(/=/g,' ').replace(/'/g,' ').replace(/"/g,' ').replace(/\s+/g,' ').trim();
+  };
+  // Also patch bridge clean
+  if(window.NativeTTS && window.NativeTTS.speak){
+    const origSpeak = window.NativeTTS.speak;
+    // already patched above
+  }
+})();
+
+
+
+// ===== V30 FINAL FIX =====
+(function(){
+  if(window.__v30) return; window.__v30=true;
+  const isNative = !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.tts);
+  if(isNative){
+    window.NativeTTS = {
+      speak(t){ try{ window.webkit.messageHandlers.tts.postMessage({action:'speak', text:(t||'').trim()}); }catch(e){} },
+      speakQueue(texts, startIdx){ try{ window.webkit.messageHandlers.tts.postMessage({action:'speakQueue', texts:texts.map(x=>x.trim()).filter(x=>x), startIndex:startIdx}); }catch(e){} },
+      pause(){ try{ window.webkit.messageHandlers.tts.postMessage({action:'pause'}) }catch(e){} },
+      resume(){ try{ window.webkit.messageHandlers.tts.postMessage({action:'resume'}) }catch(e){} },
+      stop(){ try{ window.webkit.messageHandlers.tts.postMessage({action:'stop'}) }catch(e){} }
+    };
+    const nativeSynth = {
+      _speaking:false, _paused:false, _currentUtter:null,
+      get speaking(){return this._speaking;}, get pending(){return false;}, get paused(){return this._paused;},
+      speak(u){ this._speaking=true; this._paused=false; this._currentUtter=u; window.NativeTTS.speak(u.text); setTimeout(()=>{try{u.onstart&&u.onstart()}catch(e){}},20); },
+      cancel(){ this._speaking=false; this._paused=false; try{window.NativeTTS.stop()}catch(e){} if(this._currentUtter){try{this._currentUtter.onend&&this._currentUtter.onend()}catch(e){}} },
+      pause(){ this._paused=true; window.NativeTTS.pause(); },
+      resume(){ this._paused=false; window.NativeTTS.resume(); },
+      getVoices(){return [];}
+    };
+    try{ Object.defineProperty(window,'speechSynthesis',{value:nativeSynth, writable:true, configurable:true}); }catch(e){ window.speechSynthesis=nativeSynth; }
+    window.onNativeTTSState=function(state){
+      const s=window.speechSynthesis;
+      if(state==='playing'){ s._speaking=true; }
+      else if(state==='finished' || state==='stopped'){ s._speaking=false; s._paused=false; window.__isNativeQueueActive=false; if(s._currentUtter){try{s._currentUtter.onend&&s._currentUtter.onend()}catch(e){}} if(typeof setTtsPlayIcon==='function') setTtsPlayIcon('play'); }
+    };
+    window.onNativeTTSIndex=function(idx){ try{ State.tts.idx=idx; if(typeof highlightV30==='function') highlightV30(); if(typeof updateTtsBar==='function') updateTtsBar(); }catch(e){} };
+    window.onNativeTTSWord=function(si,loc,len){ try{ if(typeof highlightWordV30==='function') highlightWordV30(si,loc,len); }catch(e){} };
+  }
+  function splitSentencesStrict(text){
+    if(!text||!text.trim()) return [];
+    let sentences=[]; let re=/[^.!?\n]+[.!?]+["\"'']?/g; let m;
+    while((m=re.exec(text))!==null){ let s=m[0].trim(); if(s.length>=2) sentences.push(s); }
+    if(sentences.length===0){ text.split(/\n+/).forEach(p=>{p=p.trim(); if(p.length>=2) sentences.push(p);}); }
+    return sentences;
+  }
+  function cleanForTTS(t){ if(!t) return ''; return t.replace(/[#*※◇◆■□★☆○●▶▷▸→←↑↓·•◦・♪♫♬†‡§¶°]/g,' ').replace(/\s+/g,' ').trim(); }
+  const origBuild=window.buildTtsQueue;
+  window.buildTtsQueue=function(){
+    let queue=[];
+    try{
+      const flow=document.getElementById('bookFlow');
+      if(!flow) return origBuild?origBuild.apply(this,arguments):[];
+      flow.querySelectorAll('.tts-sentence').forEach(s=>{ try{ const parent=s.parentNode; let txt=''; s.querySelectorAll('.tts-word').forEach(w=>{txt+=w.textContent;}); if(!txt) txt=s.textContent; parent.replaceChild(document.createTextNode(txt), s); }catch(e){} });
+      const walker=document.createTreeWalker(flow, NodeFilter.SHOW_TEXT, {acceptNode:function(node){ if(!node.nodeValue||node.nodeValue.trim().length<2) return NodeFilter.FILTER_REJECT; let p=node.parentElement; if(!p) return NodeFilter.FILTER_REJECT; if(p.tagName==='SCRIPT'||p.tagName==='STYLE'||(p.closest&&p.closest('.tts-sentence'))) return NodeFilter.FILTER_REJECT; return NodeFilter.FILTER_ACCEPT; }});
+      let nodes=[]; let n; while(n=walker.nextNode()){ nodes.push(n); }
+      nodes.forEach(textNode=>{
+        let originalText=textNode.nodeValue; if(!originalText||originalText.trim().length<2) return;
+        let sentences=splitSentencesStrict(originalText); if(sentences.length===0) sentences=[originalText.trim()];
+        let frag=document.createDocumentFragment();
+        sentences.forEach(sent=>{ let clean=cleanForTTS(sent); if(!clean||clean.length<2) return; let sentSpan=document.createElement('span'); sentSpan.className='tts-sentence'; let words=sent.split(/(\s+)/); words.forEach(w=>{ if(/^\s+$/.test(w)){ sentSpan.appendChild(document.createTextNode(w)); } else { let ws=document.createElement('span'); ws.className='tts-word'; ws.textContent=w; sentSpan.appendChild(ws); } }); frag.appendChild(sentSpan); frag.appendChild(document.createTextNode(' ')); queue.push({node:sentSpan, text:clean, original:sent, span:sentSpan}); });
+        if(frag.childNodes.length>0){ textNode.parentNode.insertBefore(frag, textNode); textNode.parentNode.removeChild(textNode); }
+      });
+      if(queue.length===0&&origBuild) return origBuild.apply(this,arguments);
+      return queue;
+    }catch(e){ return origBuild?origBuild.apply(this,arguments):[]; }
+  };
+  let lastSent=null,lastWord=null;
+  function clearV30(){ if(lastWord) try{lastWord.classList.remove('active');}catch(e){} if(lastSent){ try{lastSent.classList.remove('active'); lastSent.querySelectorAll('.tts-word.active').forEach(w=>w.classList.remove('active'));}catch(e){} } lastWord=null; lastSent=null; }
+  function highlightV30(){
+    clearV30(); let item=State.tts.queue?State.tts.queue[State.tts.idx]:null; if(!item||!item.span) return; item.span.classList.add('active'); lastSent=item.span;
+    try{ const flow=document.getElementById('bookFlow'); if(flow){ const fr=flow.getBoundingClientRect(); const er=item.span.getBoundingClientRect(); if(er.left>fr.right-20||er.top>fr.bottom-40){ const tp=(typeof pageOfNode==='function')?pageOfNode(item.span):0; const cur=State.current?State.current.spread:0; if(tp>=cur&&typeof next==='function') setTimeout(()=>{next();},100); } } }catch(e){}
+  }
+  function highlightWordV30(sentIdx,charStart,charLen){
+    try{
+      let q=State.tts.queue; if(!q||!q[sentIdx]){highlightV30(); return;} let sentSpan=q[sentIdx].span; if(!sentSpan) return;
+      if(lastSent&&lastSent!==sentSpan){ lastSent.classList.remove('active'); lastSent.querySelectorAll('.tts-word.active').forEach(w=>w.classList.remove('active')); }
+      sentSpan.classList.add('active'); lastSent=sentSpan;
+      let words=sentSpan.querySelectorAll('.tts-word'); if(!words.length) return;
+      let cum=0,target=null; for(let w of words){ if(charStart>=cum&&charStart<cum+w.textContent.length){target=w; break;} cum+=w.textContent.length; if(w.nextSibling&&w.nextSibling.nodeType===3) cum+=w.nextSibling.textContent.length; else cum+=1; }
+      if(!target){ let approx=Math.floor((charStart/Math.max(1,sentSpan.textContent.length))*words.length); target=words[Math.min(approx,words.length-1)]; }
+      if(target){ if(lastWord&&lastWord!==target) lastWord.classList.remove('active'); target.classList.add('active'); lastWord=target; }
+      try{ const flow=document.getElementById('bookFlow'); if(flow&&target){ const fr=flow.getBoundingClientRect(); const er=target.getBoundingClientRect(); if(er.left>fr.right-20||er.top>fr.bottom-40){ const tp=(typeof pageOfNode==='function')?pageOfNode(sentSpan):0; const cur=State.current?State.current.spread:0; if(tp>=cur&&typeof next==='function') setTimeout(()=>{next();},200); } } }catch(e){}
+    }catch(e){}
+  }
+  window.highlightTtsSentence=highlightV30; window.highlightWordV30=highlightWordV30;
+  window.__isNativeQueueActive=false;
+  const origStop=window.stopTTS;
+  window.stopTTS=function(){
+    window.__isNativeQueueActive=false; clearV30();
+    try{if(State.tts.synth) State.tts.synth.cancel();}catch(e){} try{window.NativeTTS&&window.NativeTTS.stop();}catch(e){}
+    State.tts.speaking=false; State.tts.paused=false; State.tts.idx=0;
+    if(typeof setTtsPlayIcon==='function') setTtsPlayIcon('play');
+    const bar=document.getElementById('ttsBar'); if(bar){ bar.classList.remove('show'); setTimeout(()=>{bar.hidden=true;},300); }
+    if(origStop){ try{return origStop.apply(this,arguments);}catch(e){} }
+  };
+  window.pauseTTS=function(){ window.__isNativeQueueActive=false; try{if(State.tts.synth) State.tts.synth.pause();}catch(e){} try{window.NativeTTS&&window.NativeTTS.pause();}catch(e){} State.tts.paused=true; if(typeof setTtsPlayIcon==='function') setTtsPlayIcon('play'); };
+  window.pauseTts=window.pauseTTS;
+  window.startTts=function(){
+    try{
+      if(window.__isNativeQueueActive){ window.stopTTS(); setTimeout(()=>{window.startTts();},150); return; }
+      let q=[]; try{q=buildTtsQueue();}catch(e){q=[];}
+      if(!q||q.length===0){ setTimeout(()=>{ let q2=buildTtsQueue(); if(!q2||q2.length===0){ if(typeof toast==='function') toast('읽을 텍스트가 없습니다'); return;} State.tts.queue=q2; doStartV30(q2); },200); return; }
+      State.tts.queue=q; doStartV30(q);
+    }catch(e){console.error(e);}
+  };
+  function doStartV30(queue){
+    try{
+      if(State.tts.synth) State.tts.synth.cancel();
+      let startIdx=0;
+      try{ const info=State.perChapter?State.perChapter.get(chapterKey()):null; if(info){ const perView=info.single?1:2; const firstPage=State.current.spread*perView; let idx=queue.findIndex(s=>{try{return pageOfNode(s.node)>=firstPage;}catch(e){return true;}}); if(idx>=0) startIdx=idx; } }catch(e){}
+      State.tts.idx=startIdx; State.tts.speaking=true; State.tts.paused=false;
+      if(typeof setTtsPlayIcon==='function') setTtsPlayIcon('pause');
+      const bar=document.getElementById('ttsBar'); if(bar){ bar.hidden=false; requestAnimationFrame(()=>bar.classList.add('show')); }
+      window.__isNativeQueueActive=true;
+      let texts=queue.map(item=>item.text).filter(t=>t&&t.length>0);
+      if(window.NativeTTS&&window.NativeTTS.speakQueue){ window.NativeTTS.speakQueue(texts,startIdx); } else { let i=startIdx; function nextF(){ if(i>=queue.length){ window.stopTTS(); return; } State.tts.idx=i; highlightV30(); let utter=new SpeechSynthesisUtterance(queue[i].text); utter.onend=function(){i++; nextF();}; window.speechSynthesis.speak(utter); } nextF(); }
+    }catch(e){console.error(e);}
+  }
+  window.speakNext=function(){return;};
+})();
+function cleanForSpeech(t){ if(!t) return ''; return t.replace(/[#*※◇◆■□★☆○●▶▷▸→←↑↓·•◦・♪♫♬†‡§¶°]/g,' ').replace(/\s+/g,' ').trim(); }
